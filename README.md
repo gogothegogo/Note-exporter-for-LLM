@@ -10,6 +10,7 @@ A lightweight Obsidian plugin designed to streamline the process of providing co
 - **Visual File Tree:** Automatically includes a directory tree structure to help the LLM understand your project's organization.
 - **Multi-File Selection:** Select multiple files in the file explorer and export them all at once.
 - **Active Folder Shortcut:** Quickly export the entire folder containing your currently open note via a command.
+- **Tag Filtering:** Define tags (including nested tags like `#private/sensitive`) in settings to automatically exclude specific notes from all exports and the Context Builder.
 
 ## Installation
 
@@ -35,7 +36,11 @@ A lightweight Obsidian plugin designed to streamline the process of providing co
 Go to **Settings > Note exporter for LLM** to:
 - Change the export format (**XML** is recommended for Claude/ChatGPT).
 - Toggle the **File Tree** inclusion.
-- Define a **Custom Template** using placeholders like `{{PATH}}`, `{{CTIME}}` and `{{MTIME}}`.
+- **Ignored Tags:** Enter a comma-separated list of tags you want to exclude. 
+    - Example: `#private, archive`
+    - Nested tags are supported: ignoring `#work` will also ignore `#work/projectA`.
+    - These files will be hidden from the Context Builder and skipped during any clipboard export.
+- Define a **Custom Template** using placeholders like `{{PATH}}`, `{{CTIME}}`, `{{MTIME}}`, and `{{TREE}}`.
 
 ## Example Output (XML)
 

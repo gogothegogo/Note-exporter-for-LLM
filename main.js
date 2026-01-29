@@ -5,6 +5,7 @@ var obsidian = require("obsidian");
 const DEFAULT_SETTINGS = {
   format: "xml", // 'xml', 'json', or 'custom'
   includeTree: true,
+  ignoredTags: [],
   customPrefix: "<context>\n{{TREE}}\n",
   customSuffix: "\n</context>",
   customItemPrefix: '<item loc="{{PATH}}" created="{{CTIME}}" modified="{{MTIME}}">\n',
@@ -122,6 +123,24 @@ class NoteExporterForLLM extends obsidian.Plugin {
     await this.saveData(this.settings);
   }
 
+  isIgnored(file) {
+    if (!this.settings.ignoredTags || this.settings.ignoredTags.length === 0) return false;
+    const cache = this.app.metadataCache.getFileCache(file);
+    if (!cache) return false;
+
+    const fileTags = obsidian.getAllTags(cache) || [];
+    return fileTags.some((fileTag) => {
+      const normalizedFileTag = fileTag.startsWith("#") ? fileTag.slice(1) : fileTag;
+      return this.settings.ignoredTags.some((ignoredTag) => {
+        const normalizedIgnored = ignoredTag.startsWith("#") ? ignoredTag.slice(1) : ignoredTag;
+        return (
+          normalizedFileTag === normalizedIgnored ||
+          normalizedFileTag.startsWith(normalizedIgnored + "/")
+        );
+      });
+    });
+  }
+
   async copyFolderToClipboard(folder) {
     const files = [];
     this.collectFiles(folder, files);
@@ -129,21 +148,23 @@ class NoteExporterForLLM extends obsidian.Plugin {
   }
 
   async exportFilesToClipboard(files) {
-    if (files.length === 0) {
-      new obsidian.Notice("No files selected for export.");
+    const validFiles = files.filter(file => !this.isIgnored(file));
+    
+    if (validFiles.length === 0) {
+      new obsidian.Notice("No files to export (all filtered by tags or empty selection).");
       return;
     }
 
-    new obsidian.Notice(`Exporting ${files.length} files...`);
+    new obsidian.Notice(`Exporting ${validFiles.length} files...`);
 
     try {
       let output = "";
       let totalChars = 0;
-      const fileTree = this.settings.includeTree ? this.generateFileTree(files) : "";
+      const fileTree = this.settings.includeTree ? this.generateFileTree(validFiles) : "";
 
       if (this.settings.format === "json") {
         const jsonContext = {};
-        for (const file of files) {
+        for (const file of validFiles) {
           const content = await this.app.vault.read(file);
           jsonContext[file.path] = {
             content: content,
@@ -161,7 +182,7 @@ class NoteExporterForLLM extends obsidian.Plugin {
         if (this.settings.includeTree) {
           output += "<tree>\n" + fileTree + "</tree>\n";
         }
-        for (const file of files) {
+        for (const file of validFiles) {
           const content = await this.app.vault.read(file);
           const stats = file.stat;
           output += `<item loc="${file.path}" created="${new Date(stats.ctime).toISOString()}" modified="${new Date(stats.mtime).toISOString()}">
@@ -174,7 +195,7 @@ ${content}
       } else {
         // Custom format
         output = this.settings.customPrefix.replace("{{TREE}}", fileTree);
-        for (const file of files) {
+        for (const file of validFiles) {
           const content = await this.app.vault.read(file);
           const stats = file.stat;
           let item = this.settings.customItemPrefix
@@ -190,7 +211,7 @@ ${content}
       }
 
       await navigator.clipboard.writeText(output);
-      new obsidian.Notice(`Copied ${files.length} files (${totalChars.toLocaleString()} chars) to clipboard.`);
+      new obsidian.Notice(`Copied ${validFiles.length} files (${totalChars.toLocaleString()} chars) to clipboard.`);
     } catch (err) {
       console.error("Failed to copy context:", err);
       new obsidian.Notice("Failed to copy context. See console for details.");
@@ -200,7 +221,7 @@ ${content}
   collectFiles(folder, files) {
     for (const child of folder.children) {
       if (child instanceof obsidian.TFile) {
-        if (child.extension === "md" || child.extension === "canvas") {
+        if ((child.extension === "md" || child.extension === "canvas") && !this.isIgnored(child)) {
           files.push(child);
         }
       } else if (child instanceof obsidian.TFolder) {
@@ -395,7 +416,8 @@ class ContextBuilderModal extends obsidian.Modal {
     const allFiles = this.app.vault.getFiles().filter(f => 
       (f.extension === "md" || f.extension === "canvas") && 
       f.path.toLowerCase().includes(query.toLowerCase()) &&
-      !this.selectedFiles.has(f)
+      !this.selectedFiles.has(f) &&
+      !this.plugin.isIgnored(f)
     );
 
     const limitedResults = allFiles.slice(0, 15);
@@ -453,6 +475,22 @@ class NoteExporterSettingTab extends obsidian.PluginSettingTab {
           .setValue(this.plugin.settings.includeTree)
           .onChange(async (value) => {
             this.plugin.settings.includeTree = value;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new obsidian.Setting(containerEl)
+      .setName("Ignored Tags")
+      .setDesc("Comma-separated list of tags to ignore. Files with these tags (or their sub-tags) will be skipped. Example: #private, archive")
+      .addText((text) =>
+        text
+          .setPlaceholder("e.g. #private, archive")
+          .setValue(this.plugin.settings.ignoredTags.join(", "))
+          .onChange(async (value) => {
+            this.plugin.settings.ignoredTags = value
+              .split(",")
+              .map((tag) => tag.trim())
+              .filter((tag) => tag.length > 0);
             await this.plugin.saveSettings();
           })
       );
