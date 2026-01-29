@@ -4,6 +4,7 @@ var obsidian = require("obsidian");
 
 const DEFAULT_SETTINGS = {
   format: "xml", // 'xml', 'json', or 'custom'
+  includeTree: true,
   ignoredTags: [],
   customPrefix: "<context>\n{{TREE}}\n",
   customSuffix: "\n</context>",
@@ -159,7 +160,7 @@ class NoteExporterForLLM extends obsidian.Plugin {
     try {
       let output = "";
       let totalChars = 0;
-      const fileTree = this.generateFileTree(validFiles);
+      const fileTree = this.settings.includeTree ? this.generateFileTree(validFiles) : "";
 
       if (this.settings.format === "json") {
         const jsonContext = {};
@@ -173,12 +174,14 @@ class NoteExporterForLLM extends obsidian.Plugin {
           totalChars += content.length;
         }
         output = JSON.stringify({
-          tree: fileTree,
+          tree: this.settings.includeTree ? fileTree : undefined,
           context: jsonContext
         }, null, 2);
       } else if (this.settings.format === "xml") {
         output = "<context>\n";
-        output += "<tree>\n" + fileTree + "</tree>\n";
+        if (this.settings.includeTree) {
+          output += "<tree>\n" + fileTree + "</tree>\n";
+        }
         for (const file of validFiles) {
           const content = await this.app.vault.read(file);
           const stats = file.stat;
@@ -191,14 +194,14 @@ ${content}
         output += "</context>";
       } else {
         // Custom format
-        output = this.settings.customPrefix.replace("{{TREE}}", fileTree);
+        output = this.settings.customPrefix.split("{{TREE}}").join(fileTree);
         for (const file of validFiles) {
           const content = await this.app.vault.read(file);
           const stats = file.stat;
           let item = this.settings.customItemPrefix
-            .replace("{{PATH}}", file.path)
-            .replace("{{CTIME}}", new Date(stats.ctime).toISOString())
-            .replace("{{MTIME}}", new Date(stats.mtime).toISOString());
+            .split("{{PATH}}").join(file.path)
+            .split("{{CTIME}}").join(new Date(stats.ctime).toISOString())
+            .split("{{MTIME}}").join(new Date(stats.mtime).toISOString());
           item += content;
           item += this.settings.customItemSuffix;
           output += item;
@@ -461,6 +464,18 @@ class NoteExporterSettingTab extends obsidian.PluginSettingTab {
             this.plugin.settings.format = value;
             await this.plugin.saveSettings();
             this.display(); // Refresh to show/hide custom fields
+          })
+      );
+
+    new obsidian.Setting(containerEl)
+      .setName("Include File Tree")
+      .setDesc("Prepend a visual directory structure of the exported files (starting from vault root)")
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.includeTree)
+          .onChange(async (value) => {
+            this.plugin.settings.includeTree = value;
+            await this.plugin.saveSettings();
           })
       );
 
