@@ -3,8 +3,7 @@
 var obsidian = require("obsidian");
 
 const DEFAULT_SETTINGS = {
-  format: "xml", // 'xml', 'json', or 'custom'
-  includeTree: true,
+  template: "xml", // 'xml', 'json', or 'custom'
   ignoredTags: [],
   customPrefix: "<context>\n{{TREE}}\n",
   customSuffix: "\n</context>",
@@ -160,55 +159,23 @@ class NoteExporterForLLM extends obsidian.Plugin {
     try {
       let output = "";
       let totalChars = 0;
-      const fileTree = this.settings.includeTree ? this.generateFileTree(validFiles) : "";
+      const fileTree = this.generateFileTree(validFiles);
 
-      if (this.settings.format === "json") {
-        const jsonContext = {};
-        for (const file of validFiles) {
-          const content = await this.app.vault.read(file);
-          jsonContext[file.path] = {
-            content: content,
-            created: new Date(file.stat.ctime).toISOString(),
-            modified: new Date(file.stat.mtime).toISOString()
-          };
-          totalChars += content.length;
-        }
-        output = JSON.stringify({
-          tree: this.settings.includeTree ? fileTree : undefined,
-          context: jsonContext
-        }, null, 2);
-      } else if (this.settings.format === "xml") {
-        output = "<context>\n";
-        if (this.settings.includeTree) {
-          output += "<tree>\n" + fileTree + "</tree>\n";
-        }
-        for (const file of validFiles) {
-          const content = await this.app.vault.read(file);
-          const stats = file.stat;
-          output += `<item loc="${file.path}" created="${new Date(stats.ctime).toISOString()}" modified="${new Date(stats.mtime).toISOString()}">
-${content}
-</item>
-`;
-          totalChars += content.length;
-        }
-        output += "</context>";
-      } else {
-        // Custom format
-        output = this.settings.customPrefix.split("{{TREE}}").join(fileTree);
-        for (const file of validFiles) {
-          const content = await this.app.vault.read(file);
-          const stats = file.stat;
-          let item = this.settings.customItemPrefix
-            .split("{{PATH}}").join(file.path)
-            .split("{{CTIME}}").join(new Date(stats.ctime).toISOString())
-            .split("{{MTIME}}").join(new Date(stats.mtime).toISOString());
-          item += content;
-          item += this.settings.customItemSuffix;
-          output += item;
-          totalChars += content.length;
-        }
-        output += this.settings.customSuffix;
+      // Template-based export
+      output = this.settings.customPrefix.split("{{TREE}}").join(fileTree);
+      for (const file of validFiles) {
+        const content = await this.app.vault.read(file);
+        const stats = file.stat;
+        let item = this.settings.customItemPrefix
+          .split("{{PATH}}").join(file.path)
+          .split("{{CTIME}}").join(new Date(stats.ctime).toISOString())
+          .split("{{MTIME}}").join(new Date(stats.mtime).toISOString());
+        item += content;
+        item += this.settings.customItemSuffix;
+        output += item;
+        totalChars += content.length;
       }
+      output += this.settings.customSuffix;
 
       await navigator.clipboard.writeText(output);
       new obsidian.Notice(`Copied ${validFiles.length} files (${totalChars.toLocaleString()} chars) to clipboard.`);
@@ -452,30 +419,29 @@ class NoteExporterSettingTab extends obsidian.PluginSettingTab {
     containerEl.createEl("h2", { text: "Note exporter for LLM Settings" });
 
     new obsidian.Setting(containerEl)
-      .setName("Export Format")
-      .setDesc("Choose the format for the clipboard output")
+      .setName("Base Template")
+      .setDesc("Choose a starting template. Customizing fields below will set this to 'Custom'.")
       .addDropdown((dropdown) =>
         dropdown
           .addOption("xml", "XML Structured")
-          .addOption("json", "JSON Structured")
-          .addOption("custom", "Custom Template")
-          .setValue(this.plugin.settings.format)
+          .addOption("json", "JSON-like (List)")
+          .addOption("custom", "Custom")
+          .setValue(this.plugin.settings.template)
           .onChange(async (value) => {
-            this.plugin.settings.format = value;
+            this.plugin.settings.template = value;
+            if (value === "xml") {
+              this.plugin.settings.customPrefix = "<context>\n{{TREE}}\n";
+              this.plugin.settings.customSuffix = "\n</context>";
+              this.plugin.settings.customItemPrefix = '<item loc="{{PATH}}" created="{{CTIME}}" modified="{{MTIME}}">\n';
+              this.plugin.settings.customItemSuffix = "\n</item>\n";
+            } else if (value === "json") {
+              this.plugin.settings.customPrefix = "[\n";
+              this.plugin.settings.customSuffix = "\n]";
+              this.plugin.settings.customItemPrefix = '  {\n    "path": "{{PATH}}",\n    "created": "{{CTIME}}",\n    "modified": "{{MTIME}}",\n    "content": "';
+              this.plugin.settings.customItemSuffix = '"\n  },\n';
+            }
             await this.plugin.saveSettings();
-            this.display(); // Refresh to show/hide custom fields
-          })
-      );
-
-    new obsidian.Setting(containerEl)
-      .setName("Include File Tree")
-      .setDesc("Prepend a visual directory structure of the exported files (starting from vault root)")
-      .addToggle((toggle) =>
-        toggle
-          .setValue(this.plugin.settings.includeTree)
-          .onChange(async (value) => {
-            this.plugin.settings.includeTree = value;
-            await this.plugin.saveSettings();
+            this.display();
           })
       );
 
@@ -495,61 +461,63 @@ class NoteExporterSettingTab extends obsidian.PluginSettingTab {
           })
       );
 
-    if (this.plugin.settings.format === "custom") {
-      containerEl.createEl("h3", { text: "Custom Template Settings" });
+    containerEl.createEl("h3", { text: "Template Configuration" });
       
-      new obsidian.Setting(containerEl)
-        .setName("Context Prefix")
-        .setDesc("Text to add at the beginning. Use {{TREE}} for the file tree.")
-        .addTextArea((text) =>
-          text
-            .setPlaceholder("<context>\n{{TREE}}\n")
-            .setValue(this.plugin.settings.customPrefix)
-            .onChange(async (value) => {
-              this.plugin.settings.customPrefix = value;
-              await this.plugin.saveSettings();
-            })
-        );
+    new obsidian.Setting(containerEl)
+      .setName("Context Prefix")
+      .setDesc("Text at the beginning. Use {{TREE}} for the file tree.")
+      .addTextArea((text) =>
+        text
+          .setPlaceholder("<context>\n{{TREE}}\n")
+          .setValue(this.plugin.settings.customPrefix)
+          .onChange(async (value) => {
+            this.plugin.settings.customPrefix = value;
+            this.plugin.settings.template = "custom";
+            await this.plugin.saveSettings();
+          })
+      );
 
-      new obsidian.Setting(containerEl)
-        .setName("Context Suffix")
-        .setDesc("Text to add at the very end")
-        .addTextArea((text) =>
-          text
-            .setPlaceholder("\n</context>")
-            .setValue(this.plugin.settings.customSuffix)
-            .onChange(async (value) => {
-              this.plugin.settings.customSuffix = value;
-              await this.plugin.saveSettings();
-            })
-        );
+    new obsidian.Setting(containerEl)
+      .setName("Context Suffix")
+      .setDesc("Text at the very end")
+      .addTextArea((text) =>
+        text
+          .setPlaceholder("\n</context>")
+          .setValue(this.plugin.settings.customSuffix)
+          .onChange(async (value) => {
+            this.plugin.settings.customSuffix = value;
+            this.plugin.settings.template = "custom";
+            await this.plugin.saveSettings();
+          })
+      );
 
-      new obsidian.Setting(containerEl)
-        .setName("Item Prefix")
-        .setDesc("Placeholders: {{PATH}}, {{CTIME}}, {{MTIME}}")
-        .addTextArea((text) =>
-          text
-            .setPlaceholder('<item loc="{{PATH}}" created="{{CTIME}}" modified="{{MTIME}}">\n')
-            .setValue(this.plugin.settings.customItemPrefix)
-            .onChange(async (value) => {
-              this.plugin.settings.customItemPrefix = value;
-              await this.plugin.saveSettings();
-            })
-        );
+    new obsidian.Setting(containerEl)
+      .setName("Item Prefix")
+      .setDesc("Before each file. Placeholders: {{PATH}}, {{CTIME}}, {{MTIME}}")
+      .addTextArea((text) =>
+        text
+          .setPlaceholder('<item loc="{{PATH}}" created="{{CTIME}}" modified="{{MTIME}}">\n')
+          .setValue(this.plugin.settings.customItemPrefix)
+          .onChange(async (value) => {
+            this.plugin.settings.customItemPrefix = value;
+            this.plugin.settings.template = "custom";
+            await this.plugin.saveSettings();
+          })
+      );
 
-      new obsidian.Setting(containerEl)
-        .setName("Item Suffix")
-        .setDesc("Text after each file")
-        .addTextArea((text) =>
-          text
-            .setPlaceholder("\n</item>\n")
-            .setValue(this.plugin.settings.customItemSuffix)
-            .onChange(async (value) => {
-              this.plugin.settings.customItemSuffix = value;
-              await this.plugin.saveSettings();
-            })
-        );
-    }
+    new obsidian.Setting(containerEl)
+      .setName("Item Suffix")
+      .setDesc("After each file")
+      .addTextArea((text) =>
+        text
+          .setPlaceholder("\n</item>\n")
+          .setValue(this.plugin.settings.customItemSuffix)
+          .onChange(async (value) => {
+            this.plugin.settings.customItemSuffix = value;
+            this.plugin.settings.template = "custom";
+            await this.plugin.saveSettings();
+          })
+      );
   }
 }
 
