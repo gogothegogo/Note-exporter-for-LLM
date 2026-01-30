@@ -13,7 +13,7 @@ const DEFAULT_SETTINGS = {
 
 class NoteExporterForLLM extends obsidian.Plugin {
   async onload() {
-    console.log("Loading Note exporter for LLM");
+    console.log("Loading Simple exporter for LLM");
     await this.loadSettings();
 
     this.addSettingTab(new NoteExporterSettingTab(this.app, this));
@@ -226,7 +226,7 @@ class NoteExporterForLLM extends obsidian.Plugin {
   }
 
   onunload() {
-    console.log("Unloading Note exporter for LLM");
+    console.log("Unloading Simple exporter for LLM");
   }
 }
 
@@ -416,7 +416,7 @@ class NoteExporterSettingTab extends obsidian.PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
 
-    containerEl.createEl("h2", { text: "Note exporter for LLM Settings" });
+    containerEl.createEl("h2", { text: "Simple exporter for LLM Settings" });
 
     new obsidian.Setting(containerEl)
       .setName("Base Template")

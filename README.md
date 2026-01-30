@@ -1,4 +1,4 @@
-# Note Exporter for LLM (Obsidian Plugin)
+# Simple Exporter for LLM (Obsidian Plugin)
 
 A lightweight Obsidian plugin designed to streamline the process of providing context to Large Language Models (LLMs) like ChatGPT, Claude, or Gemini. Quickly export your notes and canvas files in a structured format optimized for LLM comprehension.
 
@@ -16,7 +16,7 @@ A lightweight Obsidian plugin designed to streamline the process of providing co
 
 ### From GitHub (Manual)
 1. Download the latest `main.js`, `manifest.json`, and `styles.css` from the releases.
-2. Create a folder named `note-exporter-for-llm` in your vault's plugin directory: `<vault>/.obsidian/plugins/note-exporter-for-llm`.
+2. Create a folder named `simple-exporter-for-llm` in your vault's plugin directory: `<vault>/.obsidian/plugins/simple-exporter-for-llm`.
 3. Move the downloaded files into that folder.
 4. Reload Obsidian and enable the plugin in **Settings > Community plugins**.
 
@@ -33,7 +33,7 @@ A lightweight Obsidian plugin designed to streamline the process of providing co
 - Click **"Copy to Clipboard"** when ready.
 
 ### 3. Settings & Customization
-Go to **Settings > Note exporter for LLM** to:
+Go to **Settings > Simple exporter for LLM** to:
 - **Base Template:** Choose a starting template (**XML** or **JSON**).
 - **Template Configuration:** Fully customize how the context is built.
     - `Context Prefix`: Text at the very beginning. Use `{{TREE}}` to insert the visual file structure.
