@@ -112,6 +112,93 @@ class NoteExporterForLLM extends obsidian.Plugin {
         new ContextBuilderModal(this.app, this, []).open();
       },
     });
+
+    // Attempt to register with Notebook Navigator if available
+    this.app.workspace.onLayoutReady(() => {
+      const nn = this.app.plugins.plugins['notebook-navigator']?.api;
+      if (nn && nn.menus) {
+        this.registerNotebookNavigatorIntegration(nn);
+      }
+    });
+  }
+
+  registerNotebookNavigatorIntegration(nn) {
+    // Register for folders
+    if (typeof nn.menus.registerFolderMenu === 'function') {
+      nn.menus.registerFolderMenu((context) => {
+        const { folder, addItem } = context;
+        if (folder instanceof obsidian.TFolder) {
+          addItem((item) => {
+            item
+              .setTitle("Copy folder contents for LLM")
+              .setIcon("documents")
+              .onClick(async () => {
+                await this.copyFolderToClipboard(folder);
+              });
+          });
+          addItem((item) => {
+            item
+              .setTitle("Open folder in Context Builder")
+              .setIcon("layout-list")
+              .onClick(() => {
+                const files = [];
+                this.collectFiles(folder, files);
+                new ContextBuilderModal(this.app, this, files).open();
+              });
+          });
+        }
+      });
+    }
+
+    // Register for files
+    if (typeof nn.menus.registerFileMenu === 'function') {
+      nn.menus.registerFileMenu((context) => {
+        const { file, addItem, selection } = context;
+        
+        // Handle single file
+        if (file instanceof obsidian.TFile && (file.extension === "md" || file.extension === "canvas")) {
+          addItem((item) => {
+            item
+              .setTitle("Copy file for LLM")
+              .setIcon("document")
+              .onClick(async () => {
+                await this.exportFilesToClipboard([file]);
+              });
+          });
+          addItem((item) => {
+            item
+              .setTitle("Add file to Context Builder")
+              .setIcon("layout-list")
+              .onClick(() => {
+                new ContextBuilderModal(this.app, this, [file]).open();
+              });
+          });
+        }
+
+        // Handle selection (if available in this context)
+        if (selection && selection.files && selection.files.length > 0) {
+             const validFiles = selection.files.filter(f => f instanceof obsidian.TFile && (f.extension === "md" || f.extension === "canvas"));
+             if (validFiles.length > 0) {
+                addItem((item) => {
+                    item
+                    .setTitle(`Copy ${validFiles.length} files for LLM`)
+                    .setIcon("documents")
+                    .onClick(async () => {
+                        await this.exportFilesToClipboard(validFiles);
+                    });
+                });
+                addItem((item) => {
+                    item
+                    .setTitle("Add selection to Context Builder")
+                    .setIcon("layout-list")
+                    .onClick(() => {
+                        new ContextBuilderModal(this.app, this, validFiles).open();
+                    });
+                });
+             }
+        }
+      });
+    }
   }
 
   async loadSettings() {
